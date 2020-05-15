@@ -1,7 +1,9 @@
 import os
 import random
 from collections import namedtuple
-
+from collections import deque
+import copy
+import heapdict
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.path import Path
@@ -111,6 +113,18 @@ class Board(object):
         Returns:
             bool: True if the input path is valid
         '''
+        if len(path) <= 1:
+            return True
+        dic = {}
+        for territory in path:
+            if territory not in dic:
+                dic[territory] = 1
+            else:
+                return False
+        for i in range(len(path) - 1):
+            if path[i+1] not in risk.definitions.territory_neighbors[path[i]]:
+                return False
+        return True
 
     
     def is_valid_attack_path(self, path):
@@ -130,6 +144,14 @@ class Board(object):
         Returns:
             bool: True if the path is an attack path
         '''
+        if len(path) < 2 or self.is_valid_path(path) == False:
+            return False
+        player = self.owner(path[0])
+        for territory in path:
+            if territory != path[0] and self.owner(territory) == player:
+                return False
+        return True
+
 
 
     def cost_of_attack_path(self, path):
@@ -143,7 +165,10 @@ class Board(object):
         Returns:
             bool: the number of enemy armies in the path
         '''
-
+        total_armies = 0
+        for i in range(1,len(path)):
+            total_armies += self.armies(path[i])
+        return total_armies
 
     def shortest_path(self, source, target):
         '''
@@ -161,6 +186,26 @@ class Board(object):
         Returns:
             [int]: a valid path between source and target that has minimum length; this path is guaranteed to exist
         '''
+        if source == target:
+            return [source]
+        stack = []
+        stack.append(source)
+        queue = deque([])
+        queue.append(stack)
+        territories = []
+        for territory in risk.definitions.territory_names:
+            territories.append(territory)
+        while queue:
+            top = queue.popleft()
+            for territory in territories:
+                if territory in risk.definitions.territory_neighbors[top[-1]]:
+                    if territory == target:
+                        top.append(territory)
+                        return top
+                    stack_copy = copy.deepcopy(top)
+                    stack_copy.append(territory)
+                    queue.append(stack_copy)
+                    territories.remove(territory)
 
 
     def can_fortify(self, source, target):
@@ -176,7 +221,27 @@ class Board(object):
         Returns:
             bool: True if reinforcing the target from the source territory is a valid move
         '''
-
+        if source == target:
+            return [source]
+        stack = []
+        stack.append(source)
+        queue = deque([])
+        queue.append(stack)
+        player = self.owner(source)
+        territories = []
+        for territory in risk.definitions.territory_names:
+            territories.append(territory)
+        while queue:
+            top = queue.popleft()
+            for territory in territories:
+                if territory in risk.definitions.territory_neighbors[top[-1]] and self.owner(territory) == player:
+                    if territory == target:
+                        top.append(territory)
+                        return top
+                    stack_copy = copy.deepcopy(top)
+                    stack_copy.append(territory)
+                    queue.append(stack_copy)
+                    territories.remove(territory)
 
     def cheapest_attack_path(self, source, target):
         '''
@@ -191,6 +256,34 @@ class Board(object):
         Returns:
             [int]: a list of territory_ids representing the valid attack path; if no path exists, then it returns None instead
         '''
+        if self.can_attack(source, target) == False:
+            return None
+        territories = {}
+        territories[source] = [source]
+        pq = heapdict.heapdict()
+        pq[source] = 0
+        visited = []
+        visited.append(source)
+        player = self.owner(source)
+        while pq:
+            ct, ctp = pq.popitem()
+            print('ct=', ct, 'ctp=', ctp)
+            for territory in risk.definitions.territory_neighbors[ct]:
+                if territory not in visited and self.owner(territory) != player:
+                    if territory == target:
+                        cap = territories[ct]
+                        cap.append(territory)
+                        return cap
+                    ct_copy = copy.deepcopy(territories[ct])
+                    ct_copy.append(territory)
+                    prio = self.armies(territory) + ctp
+                    if territory not in pq:
+                        territories[territory] = ct_copy
+                        pq[territory] = ctp + self.armies(territory)
+                    elif prio < pq[territory]:
+                        territories[territory] = ct_copy
+                        pq[territory] = prio
+            visited.append(ct)
 
 
     def can_attack(self, source, target):
@@ -202,6 +295,33 @@ class Board(object):
         Returns:
             bool: True if a valid attack path exists between source and target; else False
         '''
+        if self._can_attack(source, target) == None:
+            return False
+        else:
+            return True
+
+    def _can_attack(self, source, target):
+        if source == target:
+            return None
+        stack = []
+        stack.append(source)
+        queue = deque([])
+        queue.append(stack)
+        player = self.owner(source)
+        territories = []
+        for territory in risk.definitions.territory_names:
+            territories.append(territory)
+        while queue:
+            top = queue.popleft()
+            for territory in territories:
+                if territory in risk.definitions.territory_neighbors[top[-1]] and self.owner(territory) != player:
+                    if territory == target:
+                        top.append(territory)
+                        return top
+                    stack_copy = copy.deepcopy(top)
+                    stack_copy.append(territory)
+                    queue.append(stack_copy)
+                    territories.remove(territory)
 
 
     # ======================= #
